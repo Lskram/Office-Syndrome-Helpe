@@ -1,0 +1,1566 @@
+﻿📋 Office Syndrome Helper - Requirements ฉบับสมบูรณ์ v2.0
+🎯 ภาพรวมแอป
+ปัญหาที่แก้ไข
+* คนทำงานออฟฟิศมักลืมลุกขยับตัว เลยปวดเมื่อยเรื้อรัง
+* ท่าออกกำลังกายที่จำเจ ทำให้เบื่อและไม่ต่อเนื่อง
+* ไม่รู้ว่าปวดจุดไหนควรทำท่าไหน
+* ไม่รู้สถานะการทำงานของระบบแจ้งเตือน
+สิ่งที่แอปจะทำ
+1. แจ้งเตือนให้ออกกำลังกายตามช่วงเวลาที่กำหนด (15-120 นาที)
+2. สุ่มเลือกท่าออกกำลังกาย ให้ไม่ซ้ำซาก จำเจ
+3. แนะนำท่าที่ตรงกับจุดที่ปวด ตามที่ผู้ใช้เลือกไว้
+4. แสดงสถานะการทำงานแบบเรียลไทม์
+5. ติดตามสถิติ ว่าทำบ่อยแค่ไหน ช่วงไหนทำได้ดี
+________________
+
+
+🏗️ การทำงานหลักของแอป
+1. การใช้งานครั้งแรก (First Time Setup)
+ขั้นตอนที่ 1: Splash Screen
+* แสดงโลโก้และชื่อแอป
+* เช็คสถานะ database และ permissions
+ขั้นตอนที่ 2: Permission Management
+กระบวนการขออนุญาติ (ปรับปรุงแล้ว):
+if (!userSettings.hasRequestedPermissions) {
+    // ขออนุญาติครั้งแรก
+    requestPermissions()
+    userSettings.hasRequestedPermissions = true
+    saveToHive()
+} else {
+    // เช็คสถานะปัจจุบัน
+    checkCurrentPermissionStatus()
+}
+
+
+Permissions ที่ต้องการ:
+* Notification permission
+* Exact alarm permission (Android 12+)
+* Vibration permission
+* Background processing permission
+ขั้นตอนที่ 3: Pain Points Selection
+แบบสอบถาม: "คุณปวดตรงไหนบ่อย?"
+* เลือกได้สูงสุด 3 จุด จาก 10 ตัวเลือก
+* ✅ คอ, ✅ บ่าและไหล่, ✅ หลังส่วนบน
+ตัวเลือกจุดที่ปวด (10 จุด):
+1. ศีรษะ
+2. ตา
+3. คอ
+4. บ่าและไหล่
+5. หลังส่วนบน
+6. หลังส่วนล่าง
+7. แขน/ศอก
+8. ข้อมือ/มือ/นิ้ว
+9. ขา
+10. เท้า
+ขั้นตอนที่ 4: Default Settings
+การตั้งค่าเริ่มต้น:
+* ช่วงการแจ้งเตือน: 60 นาที
+* เวลาทำงาน: 09:00-17:00
+* วันทำงาน: จันทร์-ศุกร์
+* เสียงแจ้งเตือน: เปิด
+* การสั่น: เปิด
+* lastNotificationTime: null (จะเริ่มนับเมื่อแจ้งเตือนครั้งแรก)
+________________
+
+
+2. ระบบแจ้งเตือนแบบสุ่ม (Random Notification System) - ปรับปรุงแล้ว
+2.1 Fixed Interval Timing Logic
+DateTime calculateNextNotificationTime() {
+  if (userSettings.lastNotificationTime == null) {
+    // ครั้งแรก - เริ่มจากตอนนี้
+    return DateTime.now().add(Duration(minutes: interval));
+  } else {
+    // ครั้งถัดไป - จาก lastNotificationTime + interval
+    return userSettings.lastNotificationTime!.add(Duration(minutes: interval));
+  }
+}
+
+
+2.2 Working Hours & Break Time Check
+bool shouldNotifyNow(DateTime now) {
+  // เช็ควันทำงาน
+  if (!isWorkingDay(now.weekday)) return false;
+  
+  // เช็คเวลาทำงาน
+  if (!isWithinWorkingHours(now)) return false;
+  
+  // เช็คช่วงพัก
+  if (isInBreakTime(now)) return false;
+  
+  return true;
+}
+
+
+2.3 Random Selection Process
+ทุกครั้งที่ถึงเวลา:
+1. เช็คเงื่อนไข: วัน, เวลา, ช่วงพัก
+2. สุ่มเลือก: 1 จุดที่ปวดจากที่ผู้ใช้เลือกไว้
+3. สุ่มเลือก: 2 ท่าออกกำลังกายจากจุดนั้น
+4. สร้าง Notification Session: พร้อม UUID
+5. แจ้งเตือน: เสียง + สั่น + persistent notification
+ตัวอย่างการทำงาน:
+ผู้ใช้เลือกไว้: [คอ, บ่าและไหล่, หลังส่วนบน]
+interval: 60 นาที
+lastNotificationTime: 13:00
+
+
+⏰ 14:00 → สุ่มได้ "บ่าและไหล่"
+         → ท่าที่ 1: ยกไหล่ขึ้น-ลง 10 ครั้ง (30 วินาที)
+         → ท่าที่ 2: หมุนไหล่ไปหน้า-หลัง (40 วินาที)
+         → lastNotificationTime = 14:00
+
+
+⏰ 15:00 → สุ่มได้ "คอ" 
+         → ท่าที่ 1: ก้ม-เงย-หัน คอช้าๆ (40 วินาที)
+         → ท่าที่ 2: เอียงคอกดเบาๆ ทั้งสองข้าง (20 วินาที)
+         → lastNotificationTime = 15:00
+
+
+________________
+
+
+3. หน้าจอทำกิจกรรม (Todo Page) - ปรับปรุงแล้ว
+การแสดงผล
+🎯 ถึงเวลาดูแล: บ่าและไหล่
+
+
+📋 ท่าที่ 1/2
+💪 ยกไหล่ทั้งสองขึ้นให้สูงสุด แล้วปล่อยลง ทำ 10 ครั้ง
+⏱️ 30 วินาที
+☐ ทำเสร็จแล้ว
+
+
+📋 ท่าที่ 2/2  
+💪 หมุนไหล่ไปข้างหน้า 10 รอบ แล้วย้อนกลับ
+⏱️ 40 วินาที
+☐ ทำเสร็จแล้ว
+
+
+━━━━━━━━━━━━━━━━━━━━━━
+[   เสร็จแล้ว   ] [  เลื่อน 15 นาที  ] [   ข้าม   ]
+
+
+การทำงาน
+1. ทำท่าทีละท่า → ติ๊กถูกเมื่อทำเสร็จ
+2. เมื่อทำครบ 2 ท่า → ปุ่ม "เสร็จแล้ว" จะกดได้
+3. กด "เสร็จแล้ว" → บันทึกสถิติ + อัพเดท lastNotificationTime + ตั้งการแจ้งเตือนครั้งถัดไป
+4. ครั้งถัดไป → สุ่มใหม่ทั้งหมด (อาจได้จุดเดิมหรือจุดใหม่ก็ได้)
+________________
+
+
+4. ระบบเลื่อนและข้าม (Snooze & Skip) - ปรับปรุงแล้ว
+ปุ่ม "เลื่อน"
+* ตัวเลือก: 5 นาที, 15 นาที, 30 นาที
+* จำกัดครั้ง: สูงสุด 3 ครั้งต่อรอบ
+* Timing Logic: เมื่อถึงเวลาที่เลื่อน → แสดงท่าเดิม (ไม่สุ่มใหม่)
+* ไม่อัพเดท: lastNotificationTime (จะอัพเดทเมื่อทำเสร็จหรือข้าม)
+ปุ่ม "ข้าม"
+* กรณี: ไม่สะดวกทำ (เช่น กำลังประชุม)
+* การทำงาน: บันทึกว่า "ข้าม" + อัพเดท lastNotificationTime + ตั้งการแจ้งเตือนครั้งถัดไป
+* ครั้งถัดไป: สุ่มใหม่ทั้งหมด
+________________
+
+
+5. ข้อมูลท่าออกกำลังกาย (Treatment Database)
+ศีรษะ (3 ท่า):
+* T1: นั่งตัวตรง หายใจเข้า-ออกลึกๆ 3 ครั้ง (30 วิ)
+* T2: ใช้นิ้วชี้กดจุดระหว่างคิ้วเบาๆ 10 วินาที (10 วิ)
+* T3: นวดเบาๆ ที่ขมับเป็นวงกลมทั้งสองข้าง 30 วินาที (30 วิ)
+ตา (3 ท่า):
+* T4: หลับตาแน่น 5 วิ แล้วลืม ทำซ้ำ 5 รอบ (25 วิ)
+* T5: มองไกลออกไป 20 ฟุต นาน 20 วินาที - กฎ 20-20-20 (20 วิ)
+* T6: กลอกตามองบน-ล่าง-ซ้าย-ขวา ช้าๆ (30 วิ)
+คอ (2 ท่า):
+* T7: ก้มคางแตะอก > เงยหน้า > หันซ้าย > หันขวา ช้าๆ (40 วิ)
+* T8: เอียงคอไปข้างหนึ่ง ใช้มือนึงกดเบาๆ ค้าง 10 วิ ทำสลับ (20 วิ)
+บ่าและไหล่ (3 ท่า):
+* T9: ยกไหล่ทั้งสองขึ้นให้สูงสุด แล้วปล่อยลง 10 ครั้ง (30 วิ)
+* T10: หมุนไหล่ไปข้างหน้า 10 รอบ แล้วย้อนกลับ (40 วิ)
+* T11: กอดตัวเองแน่นๆ แล้วยืดไหล่ออก (20 วิ)
+หลังส่วนบน (3 ท่า):
+* T12: ประสานมือยืดไปหน้าให้สุด งอหลัง (30 วิ)
+* T13: ยืดแขนข้ามอก กดด้วยมืออีกข้าง (15 วิ)
+* T14: หมุนลำตัวซ้าย-ขวา ช้าๆ (25 วิ)
+หลังส่วนล่าง (2 ท่า):
+* T15: นั่งบิดตัวซ้าย-ขวา ค้างข้างละ 15 วิ (30 วิ)
+* T16: งอตัวไปข้างหน้า จับข้อเท้า (20 วิ)
+แขน/ศอก (2 ท่า):
+* T17: เหยียดแขนตรง หมุนข้อมือ 10 รอบ (20 วิ)
+* T18: งอ-เหยียดศอก 10 ครั้ง ทั้งสองข้าง (25 วิ)
+ข้อมือ/มือ/นิ้ว (3 ท่า):
+* T19: กำมือแน่น แล้วกางนิ้ว 10 ครั้ง (20 วิ)
+* T20: หมุนข้อมือทั้งสองข้าง 10 รอบ (20 วิ)
+* T21: กดฝ่ามือด้วยมืออีกข้าง ยืดนิ้ว (25 วิ)
+ขา (2 ท่า):
+* T22: ยกเท้าสลับซ้าย-ขวา 20 ครั้ง (30 วิ)
+* T23: นั่งยืดขา งอเข่าเข้าหาอก (20 วิ)
+เท้า (2 ท่า):
+* T24: หมุนข้อเท้าทั้งสองข้าง 10 รอบ (20 วิ)
+* T25: เหยียบส้นเท้า-ปลายเท้าสลับ 20 ครั้ง (25 วิ)
+รวมทั้งหมด: 25 ท่า แบ่งตาม 10 จุดที่ปวด
+________________
+
+
+6. ระบบช่วงเวลาพัก (Break Time System) - ปรับปรุงแล้ว
+การตั้งค่า
+class WorkingSchedule {
+  List<int> workingDays;           // [1,2,3,4,5] = จันทร์-ศุกร์
+  TimeOfDay workStartTime;         // 09:00
+  TimeOfDay workEndTime;           // 17:00
+  List<BreakPeriod> breakPeriods;  // ช่วงพัก
+}
+
+
+class BreakPeriod {
+  TimeOfDay startTime;
+  TimeOfDay endTime;
+  String name;  // "พักกลางวัน", "พักบ่าย"
+}
+
+
+ตัวอย่างการทำงาน
+⚙️ ตั้งค่า:
+   - แจ้งเตือนทุก: 60 นาที
+   - เวลาทำงาน: 9:00-18:00
+   - วันทำงาน: จันทร์-ศุกร์
+   - ช่วงเวลาพัก: 12:00-13:30, 15:00-15:15
+
+
+📅 การแจ้งเตือนจริง (วันจันทร์):
+   11:00 ✅ แจ้งเตือน (สุ่ม: คอ)
+   12:00 ❌ ไม่แจ้งเตือน (ช่วงพักกลางวัน)
+   13:00 ❌ ไม่แจ้งเตือน (ยังในช่วงพัก)
+   13:30 ✅ แจ้งเตือน (หลังจากพักเสร็จ, สุ่ม: บ่าไหล่)
+   14:30 ✅ แจ้งเตือน (สุ่ม: หลังบน)
+   15:00 ❌ ไม่แจ้งเตือน (ช่วงพักบ่าย)
+   15:15 ✅ แจ้งเตือน (หลังจากพักสั้น)
+
+
+📅 วันเสาร์-อาทิต์: ❌ ไม่แจ้งเตือนเลย
+
+
+________________
+
+
+7. หน้าจอหลักของแอป (ปรับปรุงแล้ว)
+7.1 หน้าแรก (Home) - มีการปรับปรุงใหญ่
+Real-time Status Display
+// LiveCountdownWidget - ใช้ StreamBuilder
+Widget build(BuildContext context) {
+  return StreamBuilder<DateTime>(
+    stream: Stream.periodic(Duration(seconds: 1), (_) => DateTime.now()),
+    builder: (context, snapshot) {
+      final now = snapshot.data ?? DateTime.now();
+      final nextTime = calculateNextNotificationTime();
+      final difference = nextTime.difference(now);
+      
+      if (difference.isNegative) {
+        return Text("กำลังประมวลผล...");
+      }
+      
+      return Column(
+        children: [
+          Text("แจ้งเตือนถัดไปใน"),
+          Text("${difference.inHours}:${difference.inMinutes % 60}:${difference.inSeconds % 60}"),
+          LinearProgressIndicator(
+            value: calculateProgress(difference),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+
+Home Screen Layout
+┌─────────────────────────────────────┐
+│ 🏠 Office Syndrome Helper           │
+├─────────────────────────────────────┤
+│                                     │
+│   📍 จุดที่ดูแลอยู่                    │
+│   • คอ  • บ่าและไหล่  • หลังส่วนบน      │
+│                                     │
+│   ⏰ สถานะการแจ้งเตือน                 │
+│   🟢 เปิดใช้งาน                      │
+│   แจ้งเตือนถัดไปใน 45:32 นาที           │
+│   ████████░░░░ 75%                  │
+│                                     │
+│   🧪 [ทดสอบ] 📊 [สถิติ] ⚙️ [ตั้งค่า]  │
+│                                     │
+│   📈 สถิติวันนี้                      │
+│   แจ้งเตือน: 6 ครั้ง | ทำเสร็จ: 4 ครั้ง│
+│   อัตราสำเร็จ: 67%                    │
+│                                     │
+├─────────────────────────────────────┤
+│           [Pull to Refresh]         │
+└─────────────────────────────────────┘
+
+
+Test Notification Feature
+// TestNotificationButton
+void onTestPressed() async {
+  // แสดง countdown 3, 2, 1
+  for (int i = 3; i > 0; i--) {
+    showSnackBar("ทดสอบแจ้งเตือนใน $i วินาที");
+    await Future.delayed(Duration(seconds: 1));
+  }
+  
+  // ส่งการแจ้งเตือนทดสอบ
+  await NotificationService.sendTestNotification();
+}
+
+
+Pull-to-Refresh
+RefreshIndicator(
+  onRefresh: () async {
+    await Future.wait([
+      NotificationController.refreshStatus(),
+      SettingsController.reloadSettings(),
+      StatisticsController.refreshTodayStats(),
+    ]);
+  },
+  child: SingleChildScrollView(child: homeContent),
+)
+
+
+7.2 หน้าตั้งค่า (Settings) - ปรับปรุงแล้ว
+┌─────────────────────────────────────┐
+│ ⚙️ ตั้งค่า                           │
+├─────────────────────────────────────┤
+│                                     │
+│ 🔔 การแจ้งเตือน                       │
+│ ├─ เปิด/ปิด การแจ้งเตือน [🟢]         │
+│ ├─ ทุกกี่นาที [15▼30▼45▼60▼90▼120]  │
+│ ├─ เวลาเริ่ม-สิ้นสุด [09:00-17:00]   │
+│ ├─ วันทำงาน [จ▼อ▼พ▼พฤ▼ศ]          │
+│ ├─ ช่วงเวลาพัก [+ เพิ่มช่วงพัก]       │
+│ │  • พักกลางวัน: 12:00-13:30        │
+│ │  • พักบ่าย: 15:00-15:15            │
+│ ├─ เสียง [🟢] การสั่น [🟢]           │
+│ └─ การเลื่อน (สูงสุด 3 ครั้ง)         │
+│                                     │
+│ 🎯 จุดที่ปวด                         │
+│ └─ แก้ไขการเลือก (สูงสุด 3 จุด)       │
+│                                     │
+│ 💪 ท่าออกกำลังกาย                     │
+│ ├─ ดูท่าทั้งหมด                       │
+│ ├─ เพิ่มท่าใหม่ (ของตัวเอง)           │
+│ └─ แก้ไข/ลบ ท่าที่มี                  │
+│                                     │
+│ 📱 แอป                              │
+│ ├─ เวอร์ชัน 1.0.0                    │
+│ ├─ รีเซ็ตข้อมูลทั้งหมด                 │
+│ └─ ส่งออกสถิติ                        │
+└─────────────────────────────────────┘
+
+
+7.3 หน้าสถิติ (Statistics) - ปรับปรุงแล้ว
+┌─────────────────────────────────────┐
+│ 📊 สถิติการใช้งาน                     │
+├─────────────────────────────────────┤
+│                                     │
+│ 📅 วันนี้ (3 ก.ย. 2567)              │
+│ ├─ แจ้งเตือน: 8 ครั้ง                 │
+│ ├─ ทำเสร็จ: 6 ครั้ง (75%)             │
+│ ├─ เลื่อน: 1 ครั้ง                    │
+│ ├─ ข้าม: 1 ครั้ง                     │
+│ └─ เวลาเฉลี่ยต่อครั้ง: 2.5 นาที        │
+│                                     │
+│ 📈 สัปดาห์นี้ (26 ส.ค. - 1 ก.ย.)     │
+│ ┌─ % ความสำเร็จต่อวัน ─────────────┐  │
+│ │ จ ██████████ 85%              │  │
+│ │ อ ████████░░ 70%              │  │
+│ │ พ ████████████ 100%            │  │
+│ │ พฤ ██████░░░░ 60%              │  │
+│ │ ศ ████████████ 90%             │  │
+│ │ เฉลี่ย: 81%                    │  │
+│ └───────────────────────────────────┘  │
+│                                     │
+│ 🎯 จุดที่ดูแลบ่อยที่สุด                │
+│ 1. บ่าและไหล่ (35%)                 │
+│ 2. คอ (33%)                        │
+│ 3. หลังส่วนบน (32%)                 │
+│                                     │
+│ ⏰ ช่วงเวลาที่ทำได้ดี                  │
+│ 14:00-16:00 (ความสำเร็จ 95%)        │
+│                                     │
+│ 🏆 ความสำเร็จต่อเนื่อง               │
+│ ปัจจุบัน: 3 วัน | สูงสุด: 12 วัน      │
+└─────────────────────────────────────┘
+
+
+________________
+
+
+🔧 Technical Implementation Details
+8.1 Models (ปรับปรุงแล้ว)
+UserSettings Model
+@HiveType(typeId: 0)
+class UserSettings extends HiveObject {
+  @HiveField(0) List<int> selectedPainPoints;
+  @HiveField(1) int notificationInterval; // นาที
+  @HiveField(2) TimeOfDay workStartTime;
+  @HiveField(3) TimeOfDay workEndTime;
+  @HiveField(4) List<int> workingDays; // 1=จันทร์, 7=อาทิต์
+  @HiveField(5) List<BreakPeriod> breakPeriods;
+  @HiveField(6) bool soundEnabled;
+  @HiveField(7) bool vibrationEnabled;
+  @HiveField(8) bool notificationEnabled;
+  @HiveField(9) int maxSnoozeCount;
+  
+  // ⭐ เพิ่มใหม่
+  @HiveField(10) bool hasRequestedPermissions;
+  @HiveField(11) DateTime? lastNotificationTime;
+  @HiveField(12) String? currentSessionId; // เก็บ session ปัจจุบัน
+}
+
+
+NotificationSession Model
+@HiveType(typeId: 1)
+class NotificationSession extends HiveObject {
+  @HiveField(0) String id; // UUID
+  @HiveField(1) DateTime scheduledTime;
+  @HiveField(2) DateTime? actualTime;
+  @HiveField(3) int painPointId;
+  @HiveField(4) List<int> treatmentIds;
+  @HiveField(5) SessionStatus status; // scheduled, completed, snoozed, skipped
+  @HiveField(6) int snoozeCount;
+  @HiveField(7) DateTime? completedTime;
+  @HiveField(8) List<bool> treatmentCompleted; // [true, false] ใหม่
+}
+
+
+enum SessionStatus { scheduled, inProgress, completed, snoozed, skipped }
+
+
+8.2 Controllers (ปรับปรุงแล้ว)
+NotificationController - ปรับปรุงใหญ่
+class NotificationController extends GetxController {
+  // State Management
+  final RxBool isEnabled = false.obs;
+  final Rx<DateTime?> nextNotificationTime = Rx<DateTime?>(null);
+  final RxString status = "ไม่ได้เปิดใช้งาน".obs;
+  
+  // ⭐ Fixed Timing Logic
+  DateTime calculateNextNotificationTime() {
+    final settings = Get.find<SettingsController>().settings.value;
+    final interval = Duration(minutes: settings.notificationInterval);
+    
+    if (settings.lastNotificationTime == null) {
+      // ครั้งแรก - เริ่มจากตอนนี้
+      final now = DateTime.now();
+      return findNextValidTime(now.add(interval));
+    } else {
+      // ครั้งถัดไป - จาก lastNotificationTime + interval
+      final nextTime = settings.lastNotificationTime!.add(interval);
+      return findNextValidTime(nextTime);
+    }
+  }
+  
+  DateTime findNextValidTime(DateTime candidate) {
+    while (!shouldNotifyAt(candidate)) {
+      candidate = candidate.add(Duration(minutes: 1));
+    }
+    return candidate;
+  }
+  
+  bool shouldNotifyAt(DateTime time) {
+    final settings = Get.find<SettingsController>().settings.value;
+    
+    // เช็ควันทำงาน
+    if (!settings.workingDays.contains(time.weekday)) return false;
+    
+    // เช็คเวลาทำงาน
+    final timeOfDay = TimeOfDay.fromDateTime(time);
+    if (!isTimeInRange(timeOfDay, settings.workStartTime, settings.workEndTime)) {
+      return false;
+    }
+    
+    // เช็คช่วงพัก
+    for (final breakPeriod in settings.breakPeriods) {
+      if (isTimeInRange(timeOfDay, breakPeriod.startTime, breakPeriod.endTime)) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  // ⭐ Settings Communication
+  void onSettingsChanged() {
+    // เมื่อ Settings เปลี่ยน ให้คำนวณเวลาถัดไปใหม่
+    nextNotificationTime.value = calculateNextNotificationTime();
+    scheduleNotification();
+    update(); // แจ้ง UI ให้อัพเดท
+  }
+  
+  // ⭐ Session Management
+  Future<void> createNotificationSession() async {
+    final settings = Get.find<SettingsController>().settings.value;
+    final randomService = Get.find<RandomService>();
+    
+    // สุ่มเลือกจุดที่ปวดและท่า
+    final selectedPainPoint = randomService.selectRandomPainPoint(
+      settings.selectedPainPoints
+    );
+    final selectedTreatments = randomService.selectRandomTreatments(
+      selectedPainPoint, 2
+    );
+    
+    // สร้าง session ใหม่
+    final session = NotificationSession(
+      id: const Uuid().v4(),
+      scheduledTime: DateTime.now(),
+      painPointId: selectedPainPoint,
+      treatmentIds: selectedTreatments,
+      status: SessionStatus.scheduled,
+      snoozeCount: 0,
+      treatmentCompleted: [false, false],
+    );
+    
+    // เก็บใน database และ settings
+    await DatabaseService.saveSession(session);
+    settings.currentSessionId = session.id;
+    await DatabaseService.saveSettings(settings);
+    
+    // ส่งการแจ้งเตือน
+    await NotificationService.showNotification(session);
+  }
+}
+
+
+HomeController - ใหม่
+class HomeController extends GetxController {
+  final RxBool isLoading = false.obs;
+  final Rx<NotificationSession?> currentSession = Rx<NotificationSession?>(null);
+  final RxString statusText = "".obs;
+  final RxDouble progressValue = 0.0.obs;
+  final RxString timeRemaining = "".obs;
+  
+  @override
+  void onInit() {
+    super.onInit();
+    startRealtimeUpdate();
+    loadCurrentSession();
+  }
+  
+  // ⭐ Real-time Updates
+  void startRealtimeUpdate() {
+    Timer.periodic(Duration(seconds: 1), (timer) {
+      updateTimeRemaining();
+      updateProgressValue();
+      updateStatusText();
+    });
+  }
+  
+  void updateTimeRemaining() {
+    final notificationController = Get.find<NotificationController>();
+    final nextTime = notificationController.nextNotificationTime.value;
+    
+    if (nextTime == null) {
+      timeRemaining.value = "ไม่ได้เปิดใช้งาน";
+      return;
+    }
+    
+    final now = DateTime.now();
+    final difference = nextTime.difference(now);
+    
+    if (difference.isNegative) {
+      timeRemaining.value = "กำลังประมวลผล...";
+    } else {
+      final hours = difference.inHours;
+      final minutes = difference.inMinutes % 60;
+      final seconds = difference.inSeconds % 60;
+      timeRemaining.value = "${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}";
+    }
+  }
+  
+  void updateProgressValue() {
+    final notificationController = Get.find<NotificationController>();
+    final settings = Get.find<SettingsController>().settings.value;
+    final nextTime = notificationController.nextNotificationTime.value;
+    
+    if (nextTime == null || settings.lastNotificationTime == null) {
+      progressValue.value = 0.0;
+      return;
+    }
+    
+    final totalInterval = Duration(minutes: settings.notificationInterval);
+    final elapsed = DateTime.now().difference(settings.lastNotificationTime!);
+    final progress = elapsed.inMilliseconds / totalInterval.inMilliseconds;
+    progressValue.value = progress.clamp(0.0, 1.0);
+  }
+  
+  // ⭐ Pull to Refresh
+  Future<void> onRefresh() async {
+    isLoading.value = true;
+    
+    try {
+      await Future.wait([
+        Get.find<NotificationController>().refreshStatus(),
+        Get.find<SettingsController>().loadSettings(),
+        Get.find<StatisticsController>().loadTodayStats(),
+        loadCurrentSession(),
+      ]);
+    } finally {
+      isLoading.value = false;
+    }
+  }
+  
+  // ⭐ Test Notification
+  Future<void> testNotification() async {
+    for (int i = 3; i > 0; i--) {
+      Get.snackbar(
+        "ทดสอบการแจ้งเตือน",
+        "จะแจ้งเตือนใน $i วินาที",
+        duration: Duration(seconds: 1),
+      );
+      await Future.delayed(Duration(seconds: 1));
+    }
+    
+    await NotificationService.sendTestNotification();
+    Get.snackbar("ทดสอบเสร็จสิ้น", "ตรวจสอบการแจ้งเตือนบนหน้าจอ");
+  }
+}
+
+
+8.3 Services (ปรับปรุงแล้ว)
+PermissionService - ปรับปรุงใหญ่
+class PermissionService {
+  static Future<bool> checkAndRequestPermissions() async {
+    final settings = await DatabaseService.loadSettings();
+    
+    // ถ้าเคยขออนุญาติแล้ว ให้เช็คสถานะปัจจุบัน
+    if (settings.hasRequestedPermissions) {
+      return await checkCurrentPermissionStatus();
+    }
+    
+    // ขออนุญาติครั้งแรก
+    final result = await _requestAllPermissions();
+    
+    // บันทึกว่าเคยขออนุญาติแล้ว
+    settings.hasRequestedPermissions = true;
+    await DatabaseService.saveSettings(settings);
+    
+    return result;
+  }
+  
+  static Future<bool> checkCurrentPermissionStatus() async {
+    final permissions = [
+      Permission.notification,
+      if (Platform.isAndroid) Permission.scheduleExactAlarm,
+      Permission.systemAlertWindow,
+    ];
+    
+    for (final permission in permissions) {
+      final status = await permission.status;
+      if (!status.isGranted) {
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  static Future<bool> _requestAllPermissions() async {
+    // ขออนุญาติ notification
+    final notificationStatus = await Permission.notification.request();
+    if (!notificationStatus.isGranted) {
+      _showPermissionDialog("การแจ้งเตือน");
+      return false;
+    }
+    
+    // ขออนุญาติ exact alarm (Android 12+)
+    if (Platform.isAndroid) {
+      final alarmStatus = await Permission.scheduleExactAlarm.request();
+      if (!alarmStatus.isGranted) {
+        _showPermissionDialog("การตั้งเวลาแม่นยำ");
+        return false;
+      }
+    }
+    
+    return true;
+  }
+  
+  static void _showPermissionDialog(String permissionName) {
+    Get.dialog(
+      AlertDialog(
+        title: Text("ต้องการอนุญาติ$permissionName"),
+        content: Text("แอปต้องการ$permissionNameเพื่อทำงานได้อย่างถูกต้อง"),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: Text("ยกเลิก"),
+          ),
+          TextButton(
+            onPressed: () {
+              Get.back();
+              openAppSettings();
+            },
+            child: Text("ไปตั้งค่า"),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+NotificationService - ปรับปรุง
+class NotificationService {
+  static const int _notificationId = 0;
+  static FlutterLocalNotificationsPlugin? _notifications;
+  
+  static Future<void> initialize() async {
+    _notifications = FlutterLocalNotificationsPlugin();
+    
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+    
+    const settings = InitializationSettings(
+      android: androidSettings,
+      iOS: iosSettings,
+    );
+    
+    await _notifications!.initialize(
+      settings,
+      onDidReceiveNotificationResponse: _onNotificationTapped,
+    );
+    
+    // ตั้งค่าการแจ้งเตือนแบบ full screen (Android)
+    if (Platform.isAndroid) {
+      await _notifications!
+          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(
+            const AndroidNotificationChannel(
+              'office_syndrome_channel',
+              'Office Syndrome Notifications',
+              description: 'การแจ้งเตือนออกกำลังกาย',
+              importance: Importance.high,
+              priority: Priority.high,
+              playSound: true,
+              enableVibration: true,
+            ),
+          );
+    }
+  }
+  
+  static Future<void> showNotification(NotificationSession session) async {
+    final painPoint = await DatabaseService.getPainPoint(session.painPointId);
+    final settings = await DatabaseService.loadSettings();
+    
+    const androidDetails = AndroidNotificationDetails(
+      'office_syndrome_channel',
+      'Office Syndrome Notifications',
+      channelDescription: 'การแจ้งเตือนออกกำลังกาย',
+      importance: Importance.high,
+      priority: Priority.high,
+      ticker: 'ถึงเวลาออกกำลังกาย',
+      playSound: true,
+      enableVibration: true,
+      fullScreenIntent: true,
+      category: AndroidNotificationCategory.alarm,
+      visibility: NotificationVisibility.public,
+    );
+    
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+      interruptionLevel: InterruptionLevel.timeSensitive,
+    );
+    
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+    
+    await _notifications!.show(
+      _notificationId,
+      "⏰ ถึงเวลาดูแล: ${painPoint.name}",
+      "กดเพื่อดูท่าออกกำลังกาย",
+      details,
+      payload: session.id,
+    );
+    
+    // เพิ่ม persistent notification
+    await _showPersistentNotification(session);
+  }
+  
+  static Future<void> _showPersistentNotification(NotificationSession session) async {
+    const androidDetails = AndroidNotificationDetails(
+      'office_syndrome_persistent',
+      'Office Syndrome Persistent',
+      channelDescription: 'การแจ้งเตือนแบบติดค้าง',
+      importance: Importance.low,
+      priority: Priority.low,
+      ongoing: true,
+      autoCancel: false,
+      showWhen: false,
+    );
+    
+    const details = NotificationDetails(android: androidDetails);
+    
+    await _notifications!.show(
+      _notificationId + 1,
+      "🏃‍♂️ Office Syndrome Helper",
+      "มีท่าออกกำลังกายรอให้ทำ - กดเพื่อดูรายละเอียด",
+      details,
+      payload: session.id,
+    );
+  }
+  
+  // ⭐ Test Notification
+  static Future<void> sendTestNotification() async {
+    const androidDetails = AndroidNotificationDetails(
+      'office_syndrome_test',
+      'Office Syndrome Test',
+      channelDescription: 'ทดสอบการแจ้งเตือน',
+      importance: Importance.high,
+      priority: Priority.high,
+      ticker: 'ทดสอบการแจ้งเตือน',
+      playSound: true,
+      enableVibration: true,
+    );
+    
+    const details = NotificationDetails(android: androidDetails);
+    
+    await _notifications!.show(
+      999,
+      "🧪 ทดสอบการแจ้งเตือน",
+      "การแจ้งเตือนทำงานปกติ!",
+      details,
+    );
+  }
+  
+  static void _onNotificationTapped(NotificationResponse response) {
+    final payload = response.payload;
+    if (payload != null) {
+      // นำทางไปหน้า Todo Page
+      Get.toNamed('/todo', arguments: payload);
+    }
+  }
+  
+  static Future<void> cancelAllNotifications() async {
+    await _notifications?.cancelAll();
+  }
+  
+  static Future<void> clearPersistentNotification() async {
+    await _notifications?.cancel(_notificationId + 1);
+  }
+}
+
+
+8.4 Widgets (ใหม่)
+LiveCountdownWidget
+class LiveCountdownWidget extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return GetBuilder<NotificationController>(
+      builder: (controller) {
+        return StreamBuilder<DateTime>(
+          stream: Stream.periodic(Duration(seconds: 1), (_) => DateTime.now()),
+          builder: (context, snapshot) {
+            final now = snapshot.data ?? DateTime.now();
+            final nextTime = controller.nextNotificationTime.value;
+            
+            if (nextTime == null) {
+              return _buildDisabledState();
+            }
+            
+            final difference = nextTime.difference(now);
+            
+            if (difference.isNegative) {
+              return _buildProcessingState();
+            }
+            
+            return _buildActiveState(difference);
+          },
+        );
+      },
+    );
+  }
+  
+  Widget _buildActiveState(Duration difference) {
+    final hours = difference.inHours;
+    final minutes = difference.inMinutes % 60;
+    final seconds = difference.inSeconds % 60;
+    
+    final totalMinutes = Get.find<SettingsController>()
+        .settings.value.notificationInterval;
+    final progress = (totalMinutes * 60 - difference.inSeconds) / (totalMinutes * 60);
+    
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.notifications_active, color: Colors.green),
+                SizedBox(width: 8),
+                Text("สถานะการแจ้งเตือน", style: TextStyle(fontSize: 16)),
+              ],
+            ),
+            SizedBox(height: 16),
+            Text(
+              "แจ้งเตือนถัดไปใน",
+              style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+            ),
+            Text(
+              "${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}",
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
+              ),
+            ),
+            SizedBox(height: 16),
+            LinearProgressIndicator(
+              value: progress,
+              backgroundColor: Colors.grey[300],
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+            ),
+            SizedBox(height: 8),
+            Text(
+              "${(progress * 100).toInt()}% ผ่านไปแล้ว",
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildDisabledState() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.notifications_off, color: Colors.grey),
+            SizedBox(width: 8),
+            Text("การแจ้งเตือนปิดอยู่"),
+          ],
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildProcessingState() {
+    return Card(
+      child: Padding(
+        padding: EdgeInsets.all(16),
+        child: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 12),
+            Text("กำลังประมวลผลเวลาถัดไป..."),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+TestNotificationButton
+class TestNotificationButton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return GetBuilder<HomeController>(
+      builder: (controller) {
+        return OutlinedButton.icon(
+          onPressed: controller.isLoading.value 
+              ? null 
+              : () => controller.testNotification(),
+          icon: Icon(Icons.science, size: 18),
+          label: Text("ทดสอบ"),
+          style: OutlinedButton.styleFrom(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          ),
+        );
+      },
+    );
+  }
+}
+
+
+________________
+
+
+🔄 ลำดับการทำงานเต็ม (Complete Flow) - ปรับปรุงแล้ว
+เริ่มต้น:
+1. ติดตั้งแอป → Splash Screen
+2. เช็ค Permission → ถ้าเคยขอแล้วก็เช็คสถานะ ถ้าไม่เคยก็ขอใหม่
+3. เลือกจุดที่ปวด → สูงสุด 3 จุด
+4. ตั้งค่าเริ่มต้น → interval, เวลาทำงาน, วันทำงาน
+5. เริ่มระบบแจ้งเตือน → คำนวณเวลาถัดไป, ตั้ง alarm
+ทุกครั้งที่แจ้งเตือน:
+1. เช็คเงื่อนไข → วัน, เวลา, ช่วงพัก
+2. สุ่ม → 1 จุด + 2 ท่า
+3. สร้าง Session → UUID, บันทึกใน Hive
+4. แจ้งเตือน → notification + sound + vibration
+5. รอการกระทำ → ทำ, เลื่อน, หรือข้าม
+การทำกิจกรรม:
+1. เปิดหน้า Todo → โชว์ท่าที่ต้องทำ
+2. ทำท่าที่ 1 → กดติ๊กเสร็จ
+3. ทำท่าที่ 2 → กดติ๊กเสร็จ
+4. กด "เสร็จแล้ว" → บันทึก session, อัพเดท lastNotificationTime
+5. คำนวณเวลาถัดไป → lastNotificationTime + interval
+6. ตั้งการแจ้งเตือนใหม่ → AlarmManager/LocalNotifications
+การเลื่อน:
+1. กด "เลื่อน" → เลือก 5/15/30 นาที
+2. เพิ่ม snoozeCount → สูงสุด 3 ครั้ง
+3. ตั้งเวลาชั่วคราว → snoozeTime = now + snoozeInterval
+4. แจ้งเตือนอีกครั้ง → ใช้ท่าเดิม, sessionId เดิม
+5. หลังจากทำเสร็จ → บันทึก, อัพเดท lastNotificationTime
+การข้าม:
+1. กด "ข้าม" → บันทึก session เป็น skipped
+2. อัพเดท lastNotificationTime → เป็น now
+3. คำนวณเวลาถัดไป → now + interval
+4. สุ่มใหม่ครั้งถัดไป → สร้าง session ใหม่
+Real-time UI Updates:
+1. HomeController → อัพเดททุกวินาที
+2. คำนวณเวลาเหลือ → nextTime - now
+3. คำนวณ progress → (elapsed / totalInterval) * 100
+4. อัพเดท UI → countdown, progress bar, status text
+________________
+
+
+🎯 จุดเด่นหลัก (ปรับปรุงแล้ว)
+1. ไม่จำเจ + แม่นยำ
+* สุ่มใหม่ทุกครั้ง แต่ใช้ fixed interval timing
+* ไม่มีลำดับหรือรูปแบบตายตัว
+* เวลาแจ้งเตือนคงที่ ไม่เพิ่มขึ้นเมื่อรีเฟรช
+2. Real-time Experience
+* LiveCountdownWidget แสดงเวลาเหลือแบบเรียลไทม์
+* Progress indicator แสดงความคืบหน้าของช่วงเวลา
+* Auto-refresh ไม่ต้อง restart แอป
+3. Smart Permission Management
+* เช็คประวัติ ไม่ขออนุญาติซ้ำ
+* Graceful handling เมื่อ permission ถูกปฏิเสธ
+* เก็บสถานะ ใน Hive แทน SharedPreferences
+4. Enhanced UX
+* Test notification ทดสอบระบบได้ทันที
+* Pull-to-refresh รีเฟรชข้อมูลได้เอง
+* Comprehensive statistics ติดตามความก้าวหน้า
+5. Robust Architecture
+* Controller communication Settings ↔ Notification ↔ Home
+* Session-based tracking UUID, persistent data
+* Error recovery จัดการกรณีแอปค้าง, รีบูต
+________________
+
+
+📦 Dependencies & Technical Stack
+Core Dependencies (จำเป็น)
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State Management & Navigation
+  get: ^4.6.6
+  
+  # Local Database
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  
+  # Notifications & Background Tasks
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+  android_alarm_manager_plus: ^4.0.3
+  
+  # Permissions
+  permission_handler: ^11.3.1
+  
+  # UI Components
+  percent_indicator: ^4.2.1
+  
+  # Utilities
+  uuid: ^4.4.0
+  intl: ^0.19.0
+  
+  # Fonts & Icons
+  cupertino_icons: ^1.0.2
+  google_fonts: ^6.2.1
+
+
+dev_dependencies:
+  # Code Generation (สำคัญ!)
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.9
+  
+  # Testing & Linting
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+
+Build Commands
+# 1. Generate Hive adapters
+flutter packages pub run build_runner build --delete-conflicting-outputs
+
+
+# 2. Test build
+flutter analyze
+flutter test
+
+
+# 3. Build APK
+flutter build apk --release
+
+
+________________
+
+
+🚀 Development Priority
+Phase 1: Critical Foundation (1-2 weeks)
+1. Fixed Timing Logic - แก้ปัญหาเวลาเพิ่มขึ้น
+2. Permission Management - เช็คประวัติก่อนขออนุญาติ
+3. Real-time Display - LiveCountdownWidget
+4. Controller Communication - Settings ↔ Notification sync
+Phase 2: Enhanced UX (1 week)
+1. Test Notification Button - ทดสอบระบบได้
+2. Pull-to-Refresh - รีเฟรชข้อมูล
+3. Enhanced Statistics - กราฟและการวิเคราะห์
+4. Settings Improvements - ตัวเลือกเพิ่มเติม
+Phase 3: Polish & Optimization (1 week)
+1. Error Handling - จัดการข้อผิดพลาด
+2. Performance Optimization - ลด battery usage
+3. UI/UX Polish - ปรับแต่งความสวยงาม
+4. Testing & Bug Fixes - ทดสอบครอบคลุม
+________________
+
+
+📋 Success Metrics
+Technical Metrics
+* ⚡ เวลาแจ้งเตือนแม่นยำ 100%
+* 🔄 Real-time UI อัพเดททุกวินาที
+* 💾 Permission ไม่ขอซ้ำ
+* 🔄 Pull-to-refresh ทำงานได้
+User Experience Metrics
+* 📱 แอปเปิดได้ทันทีหลัง install
+* 🧪 Test notification ได้ผล
+* 📊 Statistics แสดงผลถูกต้อง
+* ⚙️ Settings เปลี่ยนแล้วมีผลทันที
+Business Metrics
+* 🎯 ความสำเร็จในการทำท่า > 70%
+* 🔄 การใช้งานต่อเนื่อง > 7 วัน
+* ⭐ User satisfaction > 4.0/5.0
+* 📈 Session completion rate > 80%
+ส่วนเสริม Requirement (ฉบับละเอียด)
+1) แพลตฟอร์ม & สภาพแวดล้อม (Android Only)
+* Target platform: Android เท่านั้น (ไม่รองรับ iOS/Web/Desktop)
+
+* ขั้นต่ำ: Android 8.0 (API 26) ขึ้นไป (รองรับ exact alarm / notification runtime permission)
+
+* Android SDK: minSdk = 26, targetSdk = 34, compileSdk = 34
+
+* Flutter/Dart ที่รองรับ: Flutter stable 3.22+ / Dart 3.x
+
+* สถาปัตยกรรมโค้ด: โครงสร้างแบบ feature-first + GetX controllers ตาม flow เดิม (Settings ↔ Notification ↔ Home) เพื่อรองรับการสื่อสารสถานะและอัปเดตแบบเรียลไทม์, และ session-based tracking ด้วย UUID.
+
+* โซนเวลา: ใช้แพ็กเกจ timezone และต้อง initializeTimeZones() ตอนบูตแอป เพื่อให้การนัดหมายแจ้งเตือนใช้เขตเวลาท้องถิ่นอย่างถูกต้อง (สอดคล้อง fixed-interval + working hours + break time).
+
+________________
+
+
+2) Privacy & Security (Local-Only)
+   * การเก็บข้อมูล: Local-only ด้วย Hive (settings, sessions, statistics, treatments) — ไม่มีการใช้อินเทอร์เน็ต/ไม่ส่งข้อมูลออกนอกเครื่อง
+
+   * กล่องข้อมูล (ตัวอย่าง):
+
+      * user_settings (1 record เดียว), notification_sessions, statistics, treatments (25+ รายการตามฐานข้อมูลท่า)
+
+         * โครงสร้างข้อมูลหลัก:
+
+            * UserSettings: เลือกจุดปวด, ช่วงเวลา, เวลาทำงาน/วันทำงาน/ช่วงพัก, เสียง/สั่น, เปิด-ปิดแจ้งเตือน, hasRequestedPermissions, lastNotificationTime, currentSessionId.
+
+            * NotificationSession: id(UUID), scheduledTime/actualTime, painPointId, treatmentIds(2), status(scheduled/inProgress/completed/snoozed/skipped), snoozeCount, completedTime, treatmentCompleted[2].
+
+               * การป้องกันข้อมูล: แนะนำให้เข้ารหัสกล่อง Hive ที่เก็บสถิติ/เซสชัน ด้วยคีย์แบบสุ่ม (เก็บคีย์ใน secure storage ของเครื่อง)
+
+               * ไม่มี Analytics/Tracking ภายนอก และ ไม่มีการร้องขอ INTERNET permission
+
+               * Data Lifecycle: ผู้ใช้สามารถ Factory Reset ได้จาก Settings (ลบข้อมูล Hive ทุกกล่อง), และ (ถ้ามี) Export/Import ให้ทำเป็นไฟล์ local เท่านั้น
+
+________________
+
+
+3) Non-Functional Requirements (NFR)
+                  * ความแม่นยำของการแจ้งเตือน:
+
+                     * ใช้ fixed-interval คำนวณรอบถัดไปจาก lastNotificationTime + interval และกรองด้วย working hours/breaks
+
+                     * เมื่อมีการ Snooze/Skip ให้ปรับ lastNotificationTime ตามกติกาที่นิยามไว้ เพื่อคงความสม่ำเสมอของช่วงเวลา (ไม่ drift)
+
+                        * ประสิทธิภาพ/แบตเตอรี่:
+
+                           * อัปเดต UI แบบ real-time (ทุก 1 วินาที) เฉพาะหน้า Home; หลีกเลี่ยงงานหนักในพื้นหลังต่อเนื่องเพื่อไม่ให้กินแบต
+
+                           * ใช้ persistent notification ระดับ low-priority เฉพาะกรณีมีงานค้าง (ตามที่กำหนดไว้)
+
+                              * ความเสถียร:
+
+                                 * หลังรีบูตเครื่อง/อัปเดตระบบ เมื่อผู้ใช้เปิดแอปให้ re-schedule แจ้งเตือนทันที จาก settings/sessions เดิม
+
+                                 * กรณีเวลาระบบเปลี่ยน (manual time change) ให้คำนวณรอบถัดไปใหม่เมื่อเปิดแอป
+
+                                    * การใช้งานได้ (Usability): ผู้ใช้ทั่วไปควรตั้งค่าและเริ่มใช้งานได้ภายใน < 5 นาที (first-time setup + เลือกจุดปวด + ค่าเริ่มต้น)
+
+________________
+
+
+4) Edge Cases & Error Handling
+                                       * Permissions:
+
+                                          * ถ้าไม่เคยขอ → ขอครั้งแรกและบันทึกสถานะ hasRequestedPermissions = true
+
+                                          * ถ้าเคยขอแล้ว → เช็กสถานะปัจจุบัน ไม่ขอซ้ำโดยไม่จำเป็น
+
+                                          * ถ้าถูกปฏิเสธแบบ “Don’t ask again” → แสดง dialog พร้อมปุ่มเปิด App Settings (ตาม flow เดิม)
+
+                                             * Power optimization / Doze:
+
+                                                * Android 12+ ต้องขอ Exact alarm permission; ถ้าไม่ได้รับ ให้ fallback เป็นการเตือนที่อาจคลาดเคลื่อน และแจ้งผู้ใช้ว่าความแม่นยำอาจลดลง (ยังคงแจ้งเตือนภายในกรอบเวลาทำงาน)
+
+                                                   * ช่วงพัก/เวลางาน: เมื่อเวลาถัดไปชนช่วงพัก ให้เลื่อนไปยัง นาทีที่ถูกต้องถัดไป ภายใน working hours (ใช้ findNextValidTime() วนขยับทีละนาทีจนเจอจุดที่ถูกต้อง)
+
+                                                   * Snooze/Skip: จำกัด snooze ต่อรอบสูงสุด 3 ครั้ง; Skip แล้วต้องอัปเดต lastNotificationTime = now เพื่อรักษา fixed-interval รอบถัดไป
+
+                                                   * ฐานข้อมูลเสียหาย/หาย: ถ้าเปิดกล่อง Hive ไม่ได้ ให้แสดงตัวเลือก “รีเซ็ตข้อมูลทั้งหมด” พร้อมคำเตือนเรื่องการสูญเสียข้อมูล
+
+________________
+
+
+5) การแจ้งเตือน & พื้นหลัง (Notification/Alarm)
+                                                      * การคำนวณเวลา:
+
+                                                         * calculateNextNotificationTime() → คำนวณจาก lastNotificationTime หรือ now + interval (ครั้งแรก) แล้วกรองด้วย working hours/breaks (shouldNotifyAt, findNextValidTime)
+
+                                                            * การสร้างเซสชัน: ทุกครั้งที่ถึงเวลา ให้สุ่ม 1 จุดปวด (จากที่ผู้ใช้เลือก) และ 2 ท่า จากจุดนั้น จากนั้นสร้าง Notification Session (UUID) และแสดงการแจ้งเตือน (sound+vibration+persistent) ตามที่นิยามไว้
+
+                                                            * ช่องทางแจ้งเตือน (Android channels):
+
+                                                               * office_syndrome_channel (importance: High, fullScreenIntent สำหรับปลุกผู้ใช้)
+
+                                                               * office_syndrome_persistent (importance: Low, ongoing)
+
+                                                                  * ปุ่มทดสอบ: ปุ่ม “Test notification” ต้องยิงแจ้งเตือนจริงเพื่อตรวจช่องทาง/สิทธิ์ได้ทันที (โค้ดทดสอบมีในบริการแจ้งเตือน)
+
+                                                                  * หลังรีบูต: เมื่อผู้ใช้เปิดแอปให้ re-initialize timezone + โหลด UserSettings + lastNotificationTime แล้วคำนวณและตั้งแจ้งเตือนถัดไปใหม่ทันที
+
+________________
+
+
+6) i18n (TH/EN)
+                                                                     * ภาษา: ไทย (เริ่มต้น) และ อังกฤษ (สลับภาษาใน Settings ได้แบบ hot-reload UI)
+
+                                                                     * เทคนิค: ใช้ intl + ไฟล์ ARB (lib/l10n/intl_th.arb, lib/l10n/intl_en.arb)
+
+                                                                        * ตัวอย่างคีย์/ข้อความ:
+
+ // intl_th.arb
+                                                                        * {
+                                                                        *   "app_title": "Office Syndrome Helper",
+                                                                        *   "next_alarm_in": "แจ้งเตือนถัดไปใน {hours}:{minutes}:{seconds}",
+                                                                        *   "test_notification": "ทดสอบการแจ้งเตือน",
+                                                                        *   "permission_required": "ต้องการสิทธิ์ {name} เพื่อทำงานได้ถูกต้อง"
+                                                                        * }
+                                                                        *  // intl_en.arb
+                                                                        * {
+                                                                        *   "app_title": "Office Syndrome Helper",
+                                                                        *   "next_alarm_in": "Next reminder in {hours}:{minutes}:{seconds}",
+                                                                        *   "test_notification": "Test Notification",
+                                                                        *   "permission_required": "{name} permission is required for proper operation"
+                                                                        * }
+                                                                           *                                                                            * รูปแบบเวลา/วันที่: แสดงผลตาม locale ของผู้ใช้โดยอาศัย intl
+
+                                                                           * Notification message: มีสตริงทั้ง 2 ภาษา (หัวเรื่อง/รายละเอียด/ปุ่ม) ให้สอดคล้องกับ payload ของ session
+
+________________
+
+
+7) UI/UX & การเข้าถึง
+                                                                              * Live Countdown & Progress: อัปเดตทุกวินาที, แสดงเปอร์เซ็นต์ความคืบหน้าเทียบ totalInterval (Home)
+
+                                                                              * ปุ่มหลัก: Test / Statistics / Settings อยู่บน Home ตาม layout ในสเปคเดิม
+
+                                                                              * ธีม/ฟอนต์: Light theme, ฟอนต์แนะนำ Noto Sans Thai + Roboto เพื่ออ่านง่ายทั้ง TH/EN
+
+                                                                              * Accessibility: ขนาดตัวอักษรอย่างน้อย 14sp, ปุ่มสัมผัส ≥ 44dp, มีคำบรรยายข้อความสำหรับไอคอนสำคัญ
+
+________________
+
+
+8) การทดสอบ (ใช้งานได้จริง)
+                                                                                 * Unit tests (ตัวอย่างหัวข้อ):
+
+                                                                                    * calculateNextNotificationTime() ในกรณีแรกเริ่ม/มี lastNotificationTime/ชนช่วงพัก/นอกเวลางาน
+
+                                                                                    * shouldNotifyAt() สำหรับวันทำงาน/วันหยุด/พักกลางวัน/ขอบเขตเวลาเริ่ม-จบ
+
+                                                                                    * ตัวสุ่ม: เลือกจุดปวดเฉพาะที่ผู้ใช้ระบุ และสุ่ม 2 ท่าในจุดนั้น (ไม่ซ้ำกันในรอบเดียว)
+
+                                                                                       * Widget tests:
+
+                                                                                          * Live countdown + progress บน Home (เปลี่ยนข้อความ/เปอร์เซ็นต์ตามเวลาจำลอง)
+
+                                                                                          * หน้า Todo: ติ๊กครบ 2 ท่าแล้วปุ่ม “เสร็จแล้ว” เปิดใช้งาน
+
+                                                                                             * Integration tests:
+
+                                                                                                * Flow: First-time setup → เปิดใช้งานแจ้งเตือน → ถึงเวลา → เปิด Todo → ทำท่า → บันทึกสถิติ → กำหนดรอบถัดไป
+
+                                                                                                   * Manual test (สำคัญกับ OS):
+
+                                                                                                      * ปฏิเสธ/อนุญาต Permission, โหมดประหยัดพลังงาน, รีบูตเครื่อง, เปลี่ยนเวลาอุปกรณ์
+
+                                                                                                         * เป้าหมาย: ครอบคลุมฟีเจอร์หลักที่ผู้ใช้ต้องเจอจริง (ไม่ต้อง 100% coverage)
+
+________________
+
+
+9) การติดตั้ง & แจกจ่าย (ไม่ขึ้นสโตร์)
+                                                                                                            * Build:
+
+                                                                                                               * flutter analyze / flutter test / flutter build apk --release (ตามลำดับ)
+
+                                                                                                                  * ไฟล์ที่ได้: app-release.apk สำหรับ sideload
+
+                                                                                                                  * เวอร์ชัน: versionName = 1.0.0, versionCode เพิ่มทุกครั้งที่แจก
+
+                                                                                                                  * การลงลายเซ็น: ใช้ keystore ภายใน (ไม่บังคับถ้าแจกภายในทีม)
+
+________________
+
+
+10) Definition of Done (Acceptance)
+                                                                                                                     * แอปรันบน Android 8.0+ ได้โดยไม่มี crash
+
+                                                                                                                     * เมื่อเปิดใช้งาน ระบบคำนวณ รอบถัดไป ตาม fixed-interval และกฎช่วงเวลางาน/พักได้ถูกต้อง
+
+                                                                                                                     * ถึงเวลาแล้วมีการแจ้งเตือน + กดเข้าไปที่หน้า Todo ได้, ทำครบ 2 ท่าบันทึก session เป็น completed และคิวรอบถัดไปอัปเดต lastNotificationTime ถูกต้อง
+
+                                                                                                                     * ปุ่ม Snooze/Skip ทำงานตามเงื่อนไขและไม่ทำให้รอบเวลา “ลื่นไถล” ออกจาก interval ที่กำหนด
+
+                                                                                                                     * สถิติรายวัน/สัปดาห์แสดงผลสอดคล้องกับจำนวน session และสถานะจริงใน Hive
+
+                                                                                                                     * ปุ่ม Test notification ทำงานและช่วยตรวจสอบช่องทาง/สิทธิ์ได้ทันที 
+
+สรุปการตั้งค่าที่ผมตั้งเป็นค่าเริ่มต้น (ถ้าคุณไม่มีความเห็นอื่น)
+                                                                                                                        * Platform: Android เท่านั้น
+
+                                                                                                                        * minSdk = 26 (Android 8.0) / compileSdk = 34 / targetSdk = 34
+
+                                                                                                                        * Flutter (แนะนำ): Flutter stable 3.22+ (ใช้เป็นค่าอ้างอิง)
+
+                                                                                                                        * Database: Hive (local only) + กำหนดการเข้ารหัสกล่องสำคัญด้วยคีย์จาก flutter_secure_storage
+
+                                                                                                                        * State management: GetX (ตาม Requirement เดิม)
+
+                                                                                                                        * ภาษา: ไทย (default) + อังกฤษ (option) via intl + ARB files
+
+                                                                                                                        * Deployment: APK sideload only (no Play Store)
+
+                                                                                                                        * Acceptance criteria: แอปรันบน Android 8.0+ โดยไม่ crash, แจ้งเตือนตามกติกา, session lifecycle ถูกต้อง
+
+________________
+
+
+รายการครบถ้วนที่ยัง “ขาด/ต้องชัดเจน/ควรกำหนด” — แบ่งเป็นกลุ่ม (MUST / SHOULD / CAN)
+A. MUST — ต้องกำหนด/ทำก่อนเริ่มพัฒนา
+                                                                                                                           1. Confirm Flutter / Dart exact version (เช่น flutter 3.22.1 / dart 3.0.0) — เพื่อป้องกัน dependency mismatch ขณะ pub get / build_runner.
+
+                                                                                                                           2. Android Gradle & plugin versions — ระบุ Android Gradle Plugin และ Gradle wrapper เวอร์ชันที่รองรับ Flutter ที่เลือก.
+
+AndroidManifest permissions (ชัดเจน) — ใส่รายการและ flow การขอ permission:
+
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+<uses-permission android:name="android.permission.VIBRATE"/>
+<uses-permission android:name="android.permission.WAKE_LOCK"/>
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+                                                                                                                              3.  — และ flow runtime request (POST_NOTIFICATIONS on Android 13+, SCHEDULE_EXACT_ALARM dialog handling).
+
+                                                                                                                              4. Hive model TypeIds & migration plan — ระบุ typeId แต่ละ model, และวิธีทำ migration / fallback ถ้า schema เปลี่ยน.
+
+                                                                                                                              5. Encryption key management — วิธีสร้าง/เก็บกุญแจ (flutter_secure_storage) และการ recovery/backup ของกุญแจ.
+
+                                                                                                                              6. Boot / Re-schedule behavior — กำหนดว่าเมื่อรีบูตเครื่องหรือ app update ต้อง re-schedule alarms อัตโนมัติ (ต้องมี BroadcastReceiver / RECEIVE_BOOT_COMPLETED).
+
+                                                                                                                              7. Exact behavior when permissions denied (UX) — ถ้าปฏิเสธถาวร ให้ทำ UX ที่ชัด (show dialog → open App Settings) และ fallback logic (ไม่ crash).
+
+                                                                                                                              8. Keystore & signing plan for release APK — ขั้นตอนสร้าง keystore, config key.properties และ signingConfigs ใน build.gradle.
+
+B. SHOULD — แนะนำให้กำหนดก่อน/ระหว่างพัฒนา
+                                                                                                                                 9. Non-functional numeric targets
+
+                                                                                                                                    * Allowed battery impact: e.g., ไม่เกิน X% battery/day (ประมาณการ)
+
+                                                                                                                                    * Notification timing accuracy: ±Y seconds/minutes (ถ้า exact alarm ได้ ± few seconds)
+
+                                                                                                                                       10. Logging & local diagnostics — เก็บ logs / last error locally (ไฟล์หรือ Hive) เพื่อ debug offline.
+
+                                                                                                                                       11. R8/Proguard rules — ถ้ามี native libs หรือ code-gen ให้ระบุ rule เพื่อ prevent reflection breakages.
+
+                                                                                                                                       12. Accessibility baseline — textScaleFactor support, semantic labels, contrast ratios.
+
+                                                                                                                                       13. Error reporting strategy (local) — หากไม่ส่งขึ้น cloud ให้เก็บข้อผิดพลาดสำคัญไว้ใน local และมีเมนูส่ง log แบบ manual (ไฟล์ .zip ให้ user ส่งให้ dev).
+
+                                                                                                                                       14. Data export/import format — ถ้าจะ support export (local only) ให้กำหนด format (JSON) และ encryption option.
+
+                                                                                                                                       15. Testing matrix — เฉพาะ Android versions / device family ที่ต้องทดสอบ (ตัวอย่าง: API 26, 29, 33).
+
+                                                                                                                                       16. Session retention policy — เก็บ session history กี่วัน/กี่รายการก่อน purge.
+
+C. CAN — เป็น enhancement/เฟสถัดไป
+                                                                                                                                          17. Ignore battery optimizations request — ให้คำแนะนำ/ปุ่มให้ผู้ใช้ whitelist (ถ้าจำเป็น) แต่อย่า rely on it.
+
+                                                                                                                                          18. Optional analytics (local aggregate) — เก็บสถิติแบบ aggregate-only เพื่อ UI (no external sharing).
+
+                                                                                                                                          19. Dark mode support — ถ้าต้องการขึ้นต่อ UI design.
+
+                                                                                                                                          20. Auto backup to local file/SD card — ถ้าผู้ใช้ต้องการย้ายอุปกรณ์.
+
+________________
+
+
+รายการเชิงเทคนิคที่ต้องมีตัวอย่างในเอกสาร/โค้ด (Deliverables ที่ AI/Dev ต้องส่ง)
+(MUST — ให้เป็นไฟล์จริง และโค้ดคอมไพล์ได้)
+                                                                                                                                             1. Project skeleton (package name, Android config)
+
+                                                                                                                                             2. pubspec.yaml ฉบับสมบูรณ์ (dependencies + dev_dependencies + version)
+
+                                                                                                                                             3. lib/ โฟลเดอร์เต็ม: models, controllers, services, widgets, pages (Home, Todo, Settings, Statistics)
+
+                                                                                                                                             4. Hive adapters & generated files (codegen) + คำสั่ง build_runner
+
+                                                                                                                                             5. AndroidManifest.xml (พร้อม permissions) + BootReceiver ตัวอย่าง
+
+                                                                                                                                             6. NotificationService implementation (channels, showNotification, persistent)
+
+                                                                                                                                             7. PermissionService flow (request + check + dialog to settings)
+
+                                                                                                                                             8. LiveCountdownWidget & HomeController implementation
+
+                                                                                                                                             9. Seed data: treatment DB (25 ท่า) เป็นไฟล์ JSON ที่โหลดตอนแรก
+
+                                                                                                                                             10. Tests: unit tests, widget tests, integration test (ตัวอย่างครบ)
+
+                                                                                                                                             11. README ระบุ: Flutter/Dart version, build commands, how to generate keystore, how to run tests, how to build APK, how to run tests for notifications (manual steps)
+
+                                                                                                                                             12. Release signing config example & key.properties template (ไม่ใส่ real keys)
+
+                                                                                                                                             13. Migration guide: วิธีอัพเดต TypeId, วิธีเพิ่ม field ใหม่ใน Hive model
+
+                                                                                                                                             14. Privacy & Security doc: วิธีเก็บ key, backup, factory reset steps
+
+________________
+
+
+Android-specific details (ควรมีใน repo & docs)
+                                                                                                                                                * AndroidManifest.xml entries (permissions + intent-filter for BOOT_COMPLETED)
+
+                                                                                                                                                * Receiver or WorkManager/AlarmManager usage decision (เราใช้ android_alarm_manager_plus + exact alarms)
+
+                                                                                                                                                * Runtime flow for POST_NOTIFICATIONS and SCHEDULE_EXACT_ALARM (dialog + fallback)
+
+                                                                                                                                                * Example createNotificationChannel() with channel IDs as in requirement (office_syndrome_channel, office_syndrome_persistent)
+
+                                                                                                                                                * Handling of Doze (workaround: exact alarm when allowed; otherwise best-effort scheduling)
+
+________________
+
+
+Migration & Versioning (สำคัญต่อ longevity)
+                                                                                                                                                   * เก็บ appVersion และ dbVersion ใน UserSettings
+
+                                                                                                                                                   * ถ้าโครง data เปลี่ยน ต้องมี migration scripts: ตัวอย่าง pseudo-code ที่อัพเดต Hive boxes เมื่อ dbVersion ต่างกัน
+
+                                                                                                                                                   * TypeId management: จดบันทึก TypeId ที่ใช้เพื่อหลีกเลี่ยง conflict ในอนาคต
+
+________________
+
+
+Test cases ตัวอย่าง (Acceptance Test / E2E)
+(MUST)
+                                                                                                                                                      1. First-time setup: install → splash → request permissions → select pain points → default settings saved
+
+                                                                                                                                                      2. Notification flow: set interval 60m → simulate time to alert → session created (UUID) → notification shown → tap → open Todo → perform 2 tasks → press Done → session marked completed + lastNotificationTime updated
+
+                                                                                                                                                      3. Snooze: at notification → press Snooze 15m → snoozeCount++ → at snooze time same session appears → complete or skip behaviors
+
+                                                                                                                                                      4. Skip: at notification → press Skip → session marked skipped + lastNotificationTime = now → next session scheduled from now+interval
+
+                                                                                                                                                      5. Permission denied: deny POST_NOTIFICATIONS → app should show dialog and still run but inform user accuracy may be limited
+
+                                                                                                                                                      6. Reboot: schedule alarm, reboot device, open app → schedules reinitialized and next notification intact
+
+                                                                                                                                                      7. Data reset: Settings → Factory Reset → all Hive boxes cleared and app goes to first-time setup
+
+________________
+
+
+Risks & Mitigations
+                                                                                                                                                         * Permission refused permanently → Mitigation: show clear UX & manual testing instructions; app continues but notifications may not appear.
+
+                                                                                                                                                         * Doze / OEM battery optimization → Mitigation: document behavior per OEM and provide guidance to user for whitelist (optional).
+
+                                                                                                                                                         * Hive schema changes break old installs → Mitigation: implement migrations & strong versioning.
+
+                                                                                                                                                         * Exact Alarm unavailable → Mitigation: fallback to best-effort AlarmManager + inform user of lower accuracy.
+
+________________
+
+
+Priority roadmap (Minimal viable + Phase 2)
+                                                                                                                                                            * MVP (high priority): core notification scheduling, session create/show notification, Todo flow, Hive persistence, basic Settings, Test Notification, basic tests, README, APK build.
+
+                                                                                                                                                            * Phase 2 (medium): improve statistics UI, export/import, encryption of Hive, better error logging, accessibility polish.
+
+                                                                                                                                                            * Phase 3 (low): dark mode, advanced analytics (local aggregate), advanced battery/workarounds.
+
+________________
+
+
+Checklist (แบบติ๊ก ✓) — ให้ copy ไปใช้
+MUST:
+                                                                                                                                                               * กำหนด Flutter/Dart เวอร์ชันที่ใช้
+
+                                                                                                                                                               * กำหนด Android Gradle / Gradle wrapper versions
+
+                                                                                                                                                               * ใส่ AndroidManifest permissions + BootReceiver
+
+                                                                                                                                                               * Implement Hive models + TypeIds + migration plan
+
+                                                                                                                                                               * Implement secure key storage (flutter_secure_storage)
+
+                                                                                                                                                               * Notification channels + NotificationService
+
+                                                                                                                                                               * Permission flow (POST_NOTIFICATIONS, SCHEDULE_EXACT_ALARM)
+
+                                                                                                                                                               * Seed treatment DB (25 ท่า) + loader
+
+                                                                                                                                                               * Tests: unit/widget/integration (core flows)
+
+                                                                                                                                                               * README + build/sign instructions
+
+                                                                                                                                                               * Release APK creation (keystore steps)
+
+SHOULD:
+                                                                                                                                                                  * Local logging & manual log export
+
+                                                                                                                                                                  * Accessibility baseline & font choices
+
+                                                                                                                                                                  * R8/proguard rules if needed
+
+                                                                                                                                                                  * dbVersion & migration scripts
+
+CAN:
+                                                                                                                                                                     * Dark mode, more locales, backup to file, optional battery whitelist UX
