@@ -1,0 +1,277 @@
+🔁 Prompt — สั่งให้สร้างโปรเจ็ค Flutter Android (พร้อมโครงสร้าง, โค้ด, tests, docs, build scripts)
+
+Context / Precondition (อ่านก่อนทำงาน):
+
+ใน repo นี้มีไฟล์ Requirement ล่าสุดอยู่ที่: docs/New Requiment (แก้ใหม่จากโปรเจ็คเดิมนะ).txt (หรือไฟล์ Requirement ที่ฉันแนบไว้ใน repo) — ให้ใช้เอกสารนี้เป็นสเปคหลักของระบบ (Office Syndrome Helper v2.0 + ส่วนเสริมที่ระบุ)
+
+เป้าหมาย: สร้างโปรเจ็ค Flutter ใหม่ตั้งแต่ 0 สำหรับ Android เท่านั้น (minSdk 26, compile/targetSdk 34) — ไม่เชื่อมต่ออินเทอร์เน็ตเพื่อเก็บข้อมูล (local-only).
+
+หากมีข้อมูลไม่เพียงพอ ให้ สมมติอย่างมีเหตุผล แต่ต้องบันทึกสมมติฐานไว้ใน ASSUMPTIONS.md.
+
+ห้ามใช้ placeholder เช่น ... หรือ // TODO ในไฟล์โค้ดที่ส่งมอบ — ทุกไฟล์ต้องเป็นโค้ดสมบูรณ์ที่คอมไพล์ได้ (null-safety) และผ่าน flutter analyze.
+
+Global constraints:
+
+Flutter stable 3.22.x (หรือระบุเวอร์ชันที่ใกล้เคียง แต่ต้องบอกเวอร์ชันจริงใน README) และ Dart 3.x
+
+Android: minSdk=26, compileSdk=34, targetSdk=34
+
+Local DB: Hive (เข้ารหัสกล่องสำคัญด้วย key ใน flutter_secure_storage)
+
+State management: GetX
+
+Notifications: flutter_local_notifications, android_alarm_manager_plus, timezone
+
+Permissions: permission_handler (POST_NOTIFICATIONS, SCHEDULE_EXACT_ALARM, VIBRATE, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE, WAKE_LOCK)
+
+Localization: intl + ARB files (th default, en)
+
+No network: แอป ห้ามทำ request ออกอินเทอร์เน็ต / ห้ามรวม analytics ภายนอก
+
+Build target: APK sideload only (ไม่ต้องลง Play Store)
+
+Dependencies (ให้ใช้เวอร์ชันเหล่านี้เป็นค่าเริ่มต้นใน pubspec.yaml):
+
+dependencies:
+  flutter:
+    sdk: flutter
+  get: ^4.6.6
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  flutter_local_notifications: ^17.2.2
+  timezone: ^0.9.4
+  android_alarm_manager_plus: ^4.0.3
+  permission_handler: ^11.3.1
+  percent_indicator: ^4.2.1
+  uuid: ^4.4.0
+  intl: ^0.19.0
+  cupertino_icons: ^1.0.2
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.9
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+
+(หาก AI ต้องการอัปเดตเวอร์ชัน ให้ระบุเหตุผลและผลกระทบใน README)
+
+🎯 Deliverables — สิ่งที่ต้องสร้างและส่งมอบเป็นไฟล์/commit ใน repo
+
+Project skeleton (/) — ชื่อ package เช่น com.yourcompany.officesyndromehelper (แก้ตาม repo)
+
+pubspec.yaml สมบูรณ์ตาม dependencies ข้างต้น + assets + l10n config
+
+lib/ เต็ม: โครงสร้างตาม feature-first:
+
+lib/
+  main.dart
+  app.dart
+  routes.dart
+  controllers/
+    notification_controller.dart
+    settings_controller.dart
+    home_controller.dart
+    statistics_controller.dart
+  models/
+    user_settings.dart
+    notification_session.dart
+    break_period.dart
+  services/
+    database_service.dart
+    notification_service.dart
+    permission_service.dart
+    random_service.dart
+    timezone_service.dart
+  pages/
+    splash_page.dart
+    home_page.dart
+    todo_page.dart
+    settings_page.dart
+    statistics_page.dart
+  widgets/
+    live_countdown_widget.dart
+    test_notification_button.dart
+  utils/
+    constants.dart
+    helpers.dart
+  l10n/
+    intl_en.arb
+    intl_th.arb
+
+
+Hive models annotated for hive_generator with fixed typeIds. (ระบุ TypeIds ชัดเจน — e.g., UserSettings typeId=0, NotificationSession typeId=1, BreakPeriod typeId=2) และรัน codegen (ไฟล์ .g.dart) — ให้รวมไฟล์ที่ถูก generate ไว้ใน repo (ไม่ต้องให้ user run build_runner).
+
+Seed data: assets/data/treatments.json (25 ท่าตาม Requirement) และ loader code เพื่อโหลดตอน first-run หาก Hive ว่าง
+
+Android setup:
+
+android/app/src/main/AndroidManifest.xml เพิ่ม permissions:
+
+<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+<uses-permission android:name="android.permission.VIBRATE" />
+<uses-permission android:name="android.permission.WAKE_LOCK" />
+<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
+
+Boot receiver (เพื่อ re-schedule after reboot) และตัวอย่าง AndroidManifest intent-filter สำหรับ RECEIVE_BOOT_COMPLETED.
+
+NotificationService (channels office_syndrome_channel, office_syndrome_persistent), persistent notification, full-screen intent for urgent, showNotification(session) และ _onNotificationTapped(payload) navigation to /todo with session id.
+
+Alarm scheduling: ใช้ android_alarm_manager_plus และ timezone to calculate next valid time (calculateNextNotificationTime, findNextValidTime, shouldNotifyAt).
+
+PermissionService: check & request flow; keep hasRequestedPermissions in UserSettings; show dialog to open App Settings if permanently denied.
+
+UI Pages: Implement UI per spec (Home with LiveCountdownWidget and progress, Todo page showing 2 treatments and Done/Snooze/Skip, Settings with all options incl. language switch, Statistics page). Use Noto Sans Thai/Roboto fonts. Ensure accessibility basics.
+
+HomeController: real-time updates (Timer.periodic) for countdown & progress.
+
+RandomService: deterministic-enough random selection of pain point & 2 non-duplicate treatments from selected pain points.
+
+Snooze & Skip logic: snooze limit 3 per session, snooze does not update lastNotificationTime, skip updates lastNotificationTime to now.
+
+Encryption: store Hive encryption keys in flutter_secure_storage and use for sensitive boxes (sessions/statistics). Provide code to generate and store key on first run.
+
+Localization: intl usage, ARB files for th and en. All UI + notification strings localized.
+
+Tests:
+
+Unit tests for calculateNextNotificationTime, shouldNotifyAt, RandomService selection.
+
+Widget tests: LiveCountdownWidget, Todo page behavior (after ticking treatments).
+
+One integration test for E2E flow (setup → trigger test notification → todo → complete).
+
+Include test/ folder with these tests and a test_report.md summarizing results (pass/fail).
+
+CI (optional): Add simple GitHub Actions workflow ci.yml that runs flutter analyze and flutter test on PRs (recommended but optional).
+
+README.md: Full instructions:
+
+Required Flutter/Dart versions
+
+How to run locally (flutter pub get, flutter packages pub run build_runner build --delete-conflicting-outputs, flutter run)
+
+How to run tests, how to build APK (flutter build apk --release)
+
+How to generate keystore & sign (example steps)
+
+How to test notifications (manual steps), how to reset DB, how to change language
+
+Assumptions list (ASSUMPTIONS.md)
+
+ASSUMPTIONS.md: List any decisions AI made if requirements were ambiguous.
+
+MIGRATION.md: DB versioning & TypeId mapping & example migration steps.
+
+Commit history & PR:
+
+Use branch feature/full-implementation (or specified).
+
+Make commits per feature (see Commit plan below).
+
+Open PR to main with description, acceptance criteria checklist, and list of files changed.
+
+✅ Coding standards / constraints to enforce in the implementation
+
+Null-safety enabled; pass flutter analyze with zero analyzer errors (warnings okay but document them).
+
+No placeholder code. Every file must compile.
+
+Provide inline comments (ไทย/EN brief) for important logic (scheduling, permission, encryption).
+
+Keep controllers/services small and testable. Use DI via GetX.
+
+Use constants for all string keys, channel IDs, box names.
+
+All network calls must be absent — if a package requires internet during install, document why and how it's used (should not be used at runtime).
+
+🧾 Exact Hive TypeIds and model fields (use these — DO NOT change unless documented)
+
+UserSettings — typeId = 0
+
+fields: selectedPainPoints (List<int>), notificationInterval (int), workStartTime (TimeOfDay), workEndTime (TimeOfDay), workingDays (List<int>), breakPeriods (List<BreakPeriod>), soundEnabled (bool), vibrationEnabled (bool), notificationEnabled (bool), maxSnoozeCount (int), hasRequestedPermissions (bool), lastNotificationTime (DateTime?), currentSessionId (String?), appVersion (String), dbVersion (int)
+
+NotificationSession — typeId = 1
+
+fields: id (String), scheduledTime (DateTime), actualTime (DateTime?), painPointId (int), treatmentIds (List<int>), status (SessionStatus), snoozeCount (int), completedTime (DateTime?), treatmentCompleted (List<bool>)
+
+BreakPeriod — typeId = 2
+
+fields: startTime (TimeOfDay), endTime (TimeOfDay), name (String)
+
+(If any additional model is needed, create with a new TypeId and document it in MIGRATION.md.)
+
+🔁 Commit plan (granular commits — ชื่อ commit/message ตามนี้)
+
+chore: init flutter project skeleton + pubspec
+
+feat: implement Hive models + adapters + seed data loader
+
+feat: implement DatabaseService + secure key storage
+
+feat: implement NotificationService + AndroidManifest + Alarm scheduling
+
+feat: implement PermissionService + permission UI flow
+
+feat: implement controllers (Notification, Settings, Home, Statistics)
+
+feat: implement pages and widgets (Home, Todo, Settings, Statistics, LiveCountdown)
+
+feat: implement RandomService + Treatment DB (25 items)
+
+test: add unit/widget/integration tests
+
+docs: add README, ASSUMPTIONS.md, MIGRATION.md
+
+chore: add CI workflow (flutter analyze + test)
+
+chore: final polish + bump version to 1.0.0
+
+หลังทำแต่ละ commit ให้ push ไปยัง branch feature/full-implementation. เมื่อเสร็จให้สร้าง PR ไปยัง main พร้อม Checklist ใน PR description.
+
+🧪 Acceptance Criteria (เอาไว้ให้ reviewer/AI ยืนยันก่อน merge)
+
+ flutter analyze → no errors
+
+ flutter test → unit + widget + integration tests pass (record results in test_report.md)
+
+ flutter build apk --release → produces app-release.apk (place path in repo or upload to release assets)
+
+ App first-run flow works: Splash → Request permissions → Select pain points → Defaults saved
+
+ Notification scheduling: calculateNextNotificationTime logic valid for corner cases (breaks, non-working days) — include unit tests proving logic
+
+ Notification flow: test notification shows, tap opens Todo page with correct session id
+
+ Snooze/Skip behavior per spec, and stats updated accordingly in Hive
+
+ Localization: UI + notifications switch between TH/EN correctly (ARB files present)
+
+ All sensitive Hive boxes encrypted with key stored in flutter_secure_storage (show code to validate)
+
+ README contains explicit instructions to run tests, build, and manual notification tests
+
+📝 If anything is ambiguous — rules for the AI to follow:
+
+Make reasonable assumptions, but record all assumptions in ASSUMPTIONS.md.
+
+Prefer completeness over minimal stubs — if uncertain about UI wording, provide both Thai and English variants and mark them for review.
+
+Avoid adding third-party services that require network or accounts (Firebase, Sentry, analytics) unless explicitly approved.
+
+If a package version is incompatible with Flutter chosen, choose the nearest compatible version and document the change & reason.
+
+🔚 Final request (สิ่งที่อยากให้ AI ส่งกลับมาใน PR / Chat reply)
+
+รายการไฟล์ที่แก้/เพิ่มทั้งหมด (path + brief description)
+
+ตัวอย่างคำสั่งรันที่สำคัญและ outputs ที่ควรจะปรากฏ (เช่น flutter analyze success, flutter test summary, flutter build apk location) — ถ้า AI รัน locally ให้แนบผลลัพธ์, ถ้าไม่ ให้บอก expected outputs และวิธีทดสอบด้วยตนเอง
+
+PR description พร้อม Checklist (ตาม Acceptance Criteria)
+
+ASSUMPTIONS.md และ MIGRATION.md ที่ชัดเจน
